@@ -7,6 +7,7 @@
 #include "debug.h"
 #include "file.h"
 #include "workqueue.h"
+#include <linux/nvme_ioctl.h>
 
 #ifdef CONFIG_LIBAIO
 #include <libaio.h>
@@ -113,6 +114,9 @@ struct io_u {
 	int (*end_io)(struct thread_data *, struct io_u **);
 
 	union {
+#ifdef CONFIG_URING_CMD
+		struct nvme_passthru_cmd pt_cmd;
+#endif
 #ifdef CONFIG_LIBAIO
 		struct iocb iocb;
 #endif

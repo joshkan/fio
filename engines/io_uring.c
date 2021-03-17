@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 
 #include "../fio.h"
 #include "../lib/pow2.h"
@@ -220,6 +221,18 @@ static int io_uring_enter(struct ioring_data *ld, unsigned int to_submit,
 			min_complete, flags, NULL, 0);
 }
 
+/* This shadows struct io_uring_cmd (48 bytes) */
+struct block_uring_cmd {
+	__u16	op;
+	__u16	pad;
+	union {
+		__u32	size;
+		__u32	ioctl_cmd;
+	};
+	__u64	addr;
+	__u64	unused[4];
+};
+
 static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 {
 	struct ioring_data *ld = td->io_ops_data;
@@ -235,6 +248,42 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 	} else {
 		sqe->fd = f->fd;
 	}
+
+#ifdef CONFIG_URING_CMD
+	/* nvme passthrough cmd case */
+	if (td->o.uring_cmd == 1) {
+		struct nvme_passthru_cmd *cmd;
+		struct block_uring_cmd *bcmd;
+		unsigned long long slba;
+		unsigned long long nlb;
+
+		bcmd = (void *) &sqe->cmd_pdu_start;
+		slba = io_u->offset/f->logical_block_size;
+		nlb = io_u->xfer_buflen/f->logical_block_size - 1;
+		cmd = &io_u->pt_cmd;
+		memset(cmd, 0, sizeof(struct nvme_passthru_cmd));
+		/* cdw10 and cdw11 represent starting slba*/
+		cmd->cdw10 = slba & 0xffffffff;
+		cmd->cdw11 = slba >> 32;
+		/* cdw12 represent number of lba to be read*/
+		cmd->cdw12 = nlb;
+		cmd->addr = (__u64)io_u->xfer_buf;
+		cmd->data_len = io_u->xfer_buflen;
+		cmd->nsid = f->nsid;
+		sqe->opcode = IORING_OP_URING_CMD;
+		bcmd->addr = (__u64)cmd;
+		bcmd->ioctl_cmd = NVME_IOCTL_IO_CMD;
+		bcmd->op = 4;
+		if (io_u->ddir == DDIR_READ) {
+			cmd->opcode = 2;
+			goto out;
+		}
+		if (io_u->ddir == DDIR_WRITE) {
+			cmd->opcode = 1;
+			goto out;
+		}
+	}
+#endif
 
 	if (io_u->ddir == DDIR_READ || io_u->ddir == DDIR_WRITE) {
 		if (o->fixedbufs) {
@@ -292,7 +341,13 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		ld->prepped = 0;
 		sqe->flags |= IOSQE_ASYNC;
 	}
-
+#ifdef CONFIG_URING_CMD
+out:
+	if (td->o.uring_cmd) {
+		sqe->cmd_user_data = (unsigned long) io_u;
+		return 0;
+	}
+#endif
 	sqe->user_data = (unsigned long) io_u;
 	return 0;
 }
@@ -308,6 +363,13 @@ static struct io_u *fio_ioring_event(struct thread_data *td, int event)
 
 	cqe = &ld->cq_ring.cqes[index];
 	io_u = (struct io_u *) (uintptr_t) cqe->user_data;
+
+	if (td->o.uring_cmd) {
+		if (cqe->res == 0) {
+			io_u->error = 0;
+			return io_u;
+		}
+	}
 
 	if (cqe->res != io_u->xfer_buflen) {
 		if (cqe->res > io_u->xfer_buflen)

@@ -2228,6 +2228,16 @@ struct fio_option fio_options[FIO_MAX_OPTS] = {
 		.group	= FIO_OPT_G_INVALID,
 	},
 	{
+		.name	= "uring_cmd",
+		.lname	= "uring_cmd",
+		.type	= FIO_OPT_INT,
+		.off1	= offsetof(struct thread_options, uring_cmd),
+		.help	= "Submit read/write using IOCTL",
+		.def	= "0",
+		.category = FIO_OPT_C_IO,
+		.group	= FIO_OPT_G_INVALID,
+	},
+	{
 		.name	= "ba",
 		.lname	= "Block size align",
 		.alias	= "blockalign",

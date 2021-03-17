@@ -77,6 +77,7 @@ struct thread_options {
 	unsigned int iodepth_batch_complete_min;
 	unsigned int iodepth_batch_complete_max;
 	unsigned int serialize_overlap;
+	unsigned int uring_cmd;
 
 	unsigned int unique_filename;
 
