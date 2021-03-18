@@ -1,6 +1,8 @@
 #ifndef FIO_H
 #define FIO_H
 
+#define CONFIG_URING_CMD /*quick enable for now */
+
 #include <sched.h>
 #include <limits.h>
 #include <pthread.h>
