@@ -14,23 +14,29 @@
 /*
  * IO submission data structure (Submission Queue Entry)
  */
-struct io_uring_sqe {
+struct io_uring_sqe_hdr {
 	__u8	opcode;		/* type of operation for this sqe */
 	__u8	flags;		/* IOSQE_ flags */
-	union {
-		__u16	ioprio;		/* ioprio for the request */
-		__u16	cmd_personality;
-	} __attribute__((packed));
+	__u16	ioprio;		/* ioprio for the request */
 	__s32	fd;		/* file descriptor to do IO on */
+};
+
+struct io_uring_sqe {
+#ifdef __KERNEL__
+	struct io_uring_sqe_hdr	hdr;
+#else
+	__u8	opcode;		/* type of operation for this sqe */
+	__u8	flags;		/* IOSQE_ flags */
+	__u16	ioprio;		/* ioprio for the request */
+	__s32	fd;		/* file descriptor to do IO on */
+#endif
 	union {
 		__u64	off;	/* offset into file */
 		__u64	addr2;
-		__u64	cmd_user_data;	/* user_data for uring_cmd */
 	};
 	union {
 		__u64	addr;	/* pointer to buffer or iovecs */
 		__u64	splice_off_in;
-		__u64	cmd_pdu_start;	/* start of PDU for uring_cmd */
 	};
 	__u32	len;		/* buffer size or number of iovecs */
 	union {
@@ -66,6 +72,15 @@ struct io_uring_sqe {
 		};
 		__u64	__pad2[3];
 	};
+};
+
+struct io_uring_cmd_sqe {
+	struct io_uring_sqe_hdr	hdr;
+	__u64			user_data;
+	__u16			op;
+	__u16			personality;
+	__u32			len;
+	__u64			pdu[5];
 };
 
 enum {

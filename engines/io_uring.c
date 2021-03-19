@@ -221,16 +221,11 @@ static int io_uring_enter(struct ioring_data *ld, unsigned int to_submit,
 			min_complete, flags, NULL, 0);
 }
 
-/* This shadows struct io_uring_cmd (48 bytes) */
+/* This overlays struct io_uring_cmd pdu (40 bytes) */
 struct block_uring_cmd {
-	__u16	op;
-	__u16	pad;
-	union {
-		__u32	size;
-		__u32	ioctl_cmd;
-	};
-	__u64	addr;
-	__u64	unused[4];
+	__u32	ioctl_cmd;
+	__u32	unused1;
+	__u64	unused2[4];
 };
 
 static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
@@ -254,10 +249,20 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 	if (td->o.uring_cmd == 1) {
 		struct nvme_passthru_cmd *cmd;
 		struct block_uring_cmd *bcmd;
+		struct io_uring_cmd_sqe *csqe;
 		unsigned long long slba;
 		unsigned long long nlb;
 
-		bcmd = (void *) &sqe->cmd_pdu_start;
+		csqe = (void *)sqe;
+		/* TBD: Is a memset required here? maybe some members of csqe have
+		 * been written by sqe before this point?
+		 * memset(csqe, 0, sizeof(*csqe));
+		 */
+		csqe->hdr.opcode = IORING_OP_URING_CMD;
+		csqe->hdr.fd = f->fd;
+		csqe->op = 4;
+		csqe->user_data = (unsigned long) io_u;
+		bcmd = (void *) &csqe->pdu;
 		slba = io_u->offset/f->logical_block_size;
 		nlb = io_u->xfer_buflen/f->logical_block_size - 1;
 		cmd = &io_u->pt_cmd;
@@ -270,10 +275,8 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		cmd->addr = (__u64)io_u->xfer_buf;
 		cmd->data_len = io_u->xfer_buflen;
 		cmd->nsid = f->nsid;
-		sqe->opcode = IORING_OP_URING_CMD;
-		bcmd->addr = (__u64)cmd;
 		bcmd->ioctl_cmd = NVME_IOCTL_IO_CMD;
-		bcmd->op = 4;
+		bcmd->unused2[0] = (__u64)cmd;
 		if (io_u->ddir == DDIR_READ) {
 			cmd->opcode = 2;
 			goto out;
@@ -344,7 +347,7 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 #ifdef CONFIG_URING_CMD
 out:
 	if (td->o.uring_cmd) {
-		sqe->cmd_user_data = (unsigned long) io_u;
+		//sqe->cmd_user_data = (unsigned long) io_u;
 		return 0;
 	}
 #endif
