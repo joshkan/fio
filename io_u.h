@@ -116,6 +116,7 @@ struct io_u {
 	union {
 #ifdef CONFIG_URING_CMD
 		struct nvme_passthru_cmd pt_cmd;
+		struct nvme_passthru_cmd64 pt_cmd64;
 #endif
 #ifdef CONFIG_LIBAIO
 		struct iocb iocb;

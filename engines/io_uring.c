@@ -286,6 +286,47 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 			goto out;
 		}
 	}
+	/* nvme_passthrough_cmd64 case */
+	else if (td->o.uring_cmd == 2) {
+		struct nvme_passthru_cmd64 *cmd;
+		struct block_uring_cmd *bcmd;
+		struct io_uring_cmd_sqe *csqe;
+		unsigned long long slba;
+		unsigned long long nlb;
+
+		csqe = (void *)sqe;
+		/* TBD: Is a memset required here? maybe some members of csqe have
+		 * been written by sqe before this point?
+		 * memset(csqe, 0, sizeof(*csqe));
+		 */
+		csqe->hdr.opcode = IORING_OP_URING_CMD;
+		csqe->hdr.fd = f->fd;
+		csqe->op = 4;
+		csqe->user_data = (unsigned long) io_u;
+		bcmd = (void *) &csqe->pdu;
+		slba = io_u->offset/f->logical_block_size;
+		nlb = io_u->xfer_buflen/f->logical_block_size - 1;
+		cmd = &io_u->pt_cmd64;
+		memset(cmd, 0, sizeof(struct nvme_passthru_cmd64));
+		/* cdw10 and cdw11 represent starting slba*/
+		cmd->cdw10 = slba & 0xffffffff;
+		cmd->cdw11 = slba >> 32;
+		/* cdw12 represent number of lba to be read*/
+		cmd->cdw12 = nlb;
+		cmd->addr = (__u64)io_u->xfer_buf;
+		cmd->data_len = io_u->xfer_buflen;
+		cmd->nsid = f->nsid;
+		bcmd->ioctl_cmd = NVME_IOCTL_IO64_CMD;
+		bcmd->unused2[0] = (__u64)cmd;
+		if (io_u->ddir == DDIR_READ) {
+			cmd->opcode = 2;
+			goto out;
+		}
+		if (io_u->ddir == DDIR_WRITE) {
+			cmd->opcode = 1;
+			goto out;
+		}
+	}
 #endif
 
 	if (io_u->ddir == DDIR_READ || io_u->ddir == DDIR_WRITE) {
