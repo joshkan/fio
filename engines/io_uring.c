@@ -262,7 +262,12 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		} else {
 			csqe->hdr.fd = f->fd;
 		}
-		csqe->hdr.opcode = IORING_OP_URING_CMD;
+		if (o->fixedbufs) {
+			csqe->hdr.opcode = IORING_OP_URING_CMD_FIXED;
+			csqe->buf_index = io_u->index;
+		} else {
+			csqe->hdr.opcode = IORING_OP_URING_CMD;
+		}
 		csqe->op = 4;
 		csqe->user_data = (unsigned long) io_u;
 		bcmd = (void *) &csqe->pdu;
@@ -278,7 +283,10 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		cmd->addr = (__u64)io_u->xfer_buf;
 		cmd->data_len = io_u->xfer_buflen;
 		cmd->nsid = f->nsid;
-		bcmd->ioctl_cmd = NVME_IOCTL_IO_CMD;
+		if (o->fixedbufs)
+			bcmd->ioctl_cmd = NVME_IOCTL_IO_CMD_FIXED;
+		else
+			bcmd->ioctl_cmd = NVME_IOCTL_IO_CMD;
 		bcmd->unused2[0] = (__u64)cmd;
 		if (io_u->ddir == DDIR_READ)
 			cmd->opcode = 2;
@@ -301,7 +309,12 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		} else {
 			csqe->hdr.fd = f->fd;
 		}
-		csqe->hdr.opcode = IORING_OP_URING_CMD;
+		if (o->fixedbufs) {
+			csqe->hdr.opcode = IORING_OP_URING_CMD_FIXED;
+			csqe->buf_index = io_u->index;
+		} else {
+			csqe->hdr.opcode = IORING_OP_URING_CMD;
+		}
 		csqe->op = 4;
 		csqe->user_data = (unsigned long) io_u;
 		bcmd = (void *) &csqe->pdu;
@@ -317,7 +330,10 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		cmd->addr = (__u64)io_u->xfer_buf;
 		cmd->data_len = io_u->xfer_buflen;
 		cmd->nsid = f->nsid;
-		bcmd->ioctl_cmd = NVME_IOCTL_IO64_CMD;
+		if (o->fixedbufs)
+			bcmd->ioctl_cmd = NVME_IOCTL_IO64_CMD_FIXED;
+		else
+			bcmd->ioctl_cmd = NVME_IOCTL_IO64_CMD;
 		bcmd->unused2[0] = (__u64)cmd;
 		if (io_u->ddir == DDIR_READ)
 			cmd->opcode = 2;
