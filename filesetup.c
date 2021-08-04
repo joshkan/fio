@@ -20,6 +20,9 @@
 #include <linux/falloc.h>
 #endif
 
+#ifdef CONFIG_URING_CMD
+#include "lib/nvme.h"
+#endif
 static FLIST_HEAD(filename_list);
 
 /*
@@ -825,6 +828,14 @@ open_again:
 			goto open_again;
 		}
 	}
+
+#ifdef CONFIG_URING_CMD
+	if (td->o.uring_cmd) {
+		/* This won't work for char-device */
+		/* set_logical_block_size(f); */
+		set_nsid(f);
+	}
+#endif
 
 	return 0;
 }
