@@ -86,6 +86,10 @@ struct fio_file {
 	HANDLE ioCP;
 #endif
 
+	/* used for passthru I/Os */
+	unsigned long logical_block_size;
+	int nsid;
+
 	/*
 	 * filename and possible memory mapping
 	 */
