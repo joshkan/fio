@@ -7,6 +7,7 @@
 #include "debug.h"
 #include "file.h"
 #include "workqueue.h"
+#include<linux/nvme_ioctl.h>
 
 #ifdef CONFIG_LIBAIO
 #include <libaio.h>
