@@ -330,7 +330,12 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		} else {
 			csqe->hdr.fd = f->fd;
 		}
-		csqe->hdr.opcode = IORING_OP_URING_CMD;
+		if (o->fixedbufs) {
+			csqe->hdr.opcode = IORING_OP_URING_CMD_FIXED;
+			csqe->buf_index = io_u->index;
+		} else {
+			csqe->hdr.opcode = IORING_OP_URING_CMD;
+		}
 		csqe->user_data = (unsigned long) io_u;
 		bcmd = (void *) &csqe->pdu;
 		slba = io_u->offset/f->logical_block_size;
