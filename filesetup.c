@@ -20,6 +20,8 @@
 #include <linux/falloc.h>
 #endif
 
+#include "lib/nvme.h"
+
 static FLIST_HEAD(filename_list);
 
 /*
@@ -830,7 +832,8 @@ open_again:
 			goto open_again;
 		}
 	}
-
+	if (td->o.uring_cmd)
+		set_logical_block_size(f);
 	return 0;
 }
 
@@ -872,6 +875,8 @@ static int get_file_sizes(struct thread_data *td)
 		 * of files, similar to the way file ->io_size is set.
 		 * stat(2) failure doesn't set ->real_file_size to -1.
 		 */
+		if (strstr(f->file_name, "ng"))
+			f->real_file_size = get_char_size(f);
 		if (f->real_file_size == -1ULL && td->o.size)
 			f->real_file_size = td->o.size / td->o.nr_files;
 	}
