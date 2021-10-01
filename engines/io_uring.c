@@ -291,6 +291,13 @@ static int io_uring_enter(struct ioring_data *ld, unsigned int to_submit,
 			min_complete, flags, NULL, 0);
 }
 
+/* This overlays struct io_uring_cmd pdu (40 bytes) */
+struct block_uring_cmd {
+	__u32	ioctl_cmd;
+	__u32	unused1;
+	__u64	unused2[4];
+};
+
 static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 {
 	struct ioring_data *ld = td->io_ops_data;
@@ -306,6 +313,45 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 	} else {
 		sqe->fd = f->fd;
 		sqe->flags = 0;
+	}
+
+	/* nvme_passthru_cmd64 case */
+	if (td->o.uring_cmd == 1) {
+		struct nvme_passthru_cmd64 *cmd;
+		struct block_uring_cmd *bcmd;
+		struct io_uring_cmd_sqe *csqe;
+		unsigned long long slba;
+		unsigned long long nlb;
+
+		csqe = (void *)sqe;
+		if (o->registerfiles) {
+			csqe->hdr.fd = f->engine_pos;
+			csqe->hdr.flags = IOSQE_FIXED_FILE;
+		} else {
+			csqe->hdr.fd = f->fd;
+		}
+		csqe->hdr.opcode = IORING_OP_URING_CMD;
+		csqe->user_data = (unsigned long) io_u;
+		bcmd = (void *) &csqe->pdu;
+		slba = io_u->offset/f->logical_block_size;
+		nlb = io_u->xfer_buflen/f->logical_block_size - 1;
+		cmd = &io_u->pt_cmd64;
+		memset(cmd, 0, sizeof(struct nvme_passthru_cmd64));
+		/* cdw10 and cdw11 represent starting slba*/
+		cmd->cdw10 = slba & 0xffffffff;
+		cmd->cdw11 = slba >> 32;
+		/* cdw12 represent number of lba to be read*/
+		cmd->cdw12 = nlb;
+		cmd->addr = (__u64)io_u->xfer_buf;
+		cmd->data_len = io_u->xfer_buflen;
+		cmd->nsid = f->nsid;
+		bcmd->ioctl_cmd = NVME_IOCTL_IO64_CMD;
+		bcmd->unused2[0] = (__u64)cmd;
+		if (io_u->ddir == DDIR_READ)
+			cmd->opcode = 2;
+		if (io_u->ddir == DDIR_WRITE)
+			cmd->opcode = 1;
+		return 0;
 	}
 
 	if (io_u->ddir == DDIR_READ || io_u->ddir == DDIR_WRITE) {
@@ -376,6 +422,13 @@ static struct io_u *fio_ioring_event(struct thread_data *td, int event)
 
 	cqe = &ld->cq_ring.cqes[index];
 	io_u = (struct io_u *) (uintptr_t) cqe->user_data;
+
+	if (td->o.uring_cmd) {
+		if (cqe->res == 0) {
+			io_u->error = 0;
+			return io_u;
+		}
+	}
 
 	if (cqe->res != io_u->xfer_buflen) {
 		if (cqe->res > io_u->xfer_buflen)

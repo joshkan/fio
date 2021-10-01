@@ -119,6 +119,7 @@ struct io_u {
 	int (*end_io)(struct thread_data *, struct io_u **);
 
 	union {
+		struct nvme_passthru_cmd64 pt_cmd64;
 #ifdef CONFIG_LIBAIO
 		struct iocb iocb;
 #endif
