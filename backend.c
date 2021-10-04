@@ -1330,7 +1330,7 @@ int init_io_u_buffers(struct thread_data *td)
 	 * lucky and the allocator gives us an aligned address.
 	 */
 	if (td->o.odirect || td->o.mem_align || td->o.oatomic ||
-	    td_ioengine_flagged(td, FIO_RAWIO))
+	    td_ioengine_flagged(td, FIO_RAWIO) || td->o.uring_cmd)
 		td->orig_buffer_size += page_mask + td->o.mem_align;
 
 	if (td->o.mem_type == MEM_SHMHUGE || td->o.mem_type == MEM_MMAPHUGE) {
@@ -1349,7 +1349,7 @@ int init_io_u_buffers(struct thread_data *td)
 		return 1;
 
 	if (td->o.odirect || td->o.mem_align || td->o.oatomic ||
-	    td_ioengine_flagged(td, FIO_RAWIO))
+	    td_ioengine_flagged(td, FIO_RAWIO) || td->o.uring_cmd)
 		p = PTR_ALIGN(td->orig_buffer, page_mask) + td->o.mem_align;
 	else
 		p = td->orig_buffer;

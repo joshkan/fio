@@ -296,7 +296,7 @@ int allocate_io_mem(struct thread_data *td)
 	total_mem = td->orig_buffer_size;
 
 	if (td->o.odirect || td->o.mem_align || td->o.oatomic ||
-	    td_ioengine_flagged(td, FIO_MEMALIGN)) {
+	    td_ioengine_flagged(td, FIO_MEMALIGN) || td->o.uring_cmd) {
 		total_mem += page_mask;
 		if (td->o.mem_align && td->o.mem_align > page_size)
 			total_mem += td->o.mem_align - page_size;
