@@ -345,6 +345,8 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		/* cdw10 and cdw11 represent starting slba*/
 		cmd->cdw10 = slba & 0xffffffff;
 		cmd->cdw11 = slba >> 32;
+		if (o->hipri)
+			cmd->flags = 1;
 		/* cdw12 represent number of lba to be read*/
 		cmd->cdw12 = nlb;
 		cmd->addr = (__u64)io_u->xfer_buf;
