@@ -11,56 +11,73 @@
 #include <linux/fs.h>
 #include <linux/types.h>
 
+#define __io_uring_sqe	\
+	__u8	opcode;		/* type of operation for this sqe */	\
+	__u8	flags;		/* IOSQE_ flags */			\
+	__u16	ioprio;		/* ioprio for the request */		\
+	__s32	fd;		/* file descriptor to do IO on */	\
+	union {								\
+		__u64	off;	/* offset into file */			\
+		__u64	addr2;						\
+		__u32	cmd_op;						\
+	};								\
+	union {								\
+		__u64	addr;	/* pointer to buffer or iovecs */	\
+		__u64	splice_off_in;					\
+		__u16	cmd_len;						\
+	};								\
+	__u32	len;		/* buffer size or number of iovecs */	\
+	union {								\
+		__kernel_rwf_t	rw_flags;				\
+		__u32		fsync_flags;				\
+		__u16		poll_events;	/* compatibility */	\
+		__u32		poll32_events;	/* word-reversed for BE */ \
+		__u32		sync_range_flags;			\
+		__u32		msg_flags;				\
+		__u32		timeout_flags;				\
+		__u32		accept_flags;				\
+		__u32		cancel_flags;				\
+		__u32		open_flags;				\
+		__u32		statx_flags;				\
+		__u32		fadvise_advice;				\
+		__u32		splice_flags;				\
+		__u32		rename_flags;				\
+		__u32		unlink_flags;				\
+		__u32		hardlink_flags;				\
+	};								\
+	__u64	user_data; /* data to be passed back at completion time */ \
+	/* pack this to avoid bogus arm OABI complaints */		\
+	union {								\
+		/* index into fixed buffers, if used */			\
+		__u16	buf_index;					\
+		/* for grouped buffer selection */			\
+		__u16	buf_group;					\
+	} __attribute__((packed));					\
+	/* personality to use, if used */				\
+	__u16	personality;						\
+	union {								\
+		__s32	splice_fd_in;					\
+		__u32	file_index;					\
+	};								\
+	union {								\
+		__u64	__pad2[2];					\
+		__u64	cmd;						\
+	};								\
+
 /*
  * IO submission data structure (Submission Queue Entry)
  */
 struct io_uring_sqe {
-	__u8	opcode;		/* type of operation for this sqe */
-	__u8	flags;		/* IOSQE_ flags */
-	__u16	ioprio;		/* ioprio for the request */
-	__s32	fd;		/* file descriptor to do IO on */
-	union {
-		__u64	off;	/* offset into file */
-		__u64	addr2;
-	};
-	union {
-		__u64	addr;	/* pointer to buffer or iovecs */
-		__u64	splice_off_in;
-	};
-	__u32	len;		/* buffer size or number of iovecs */
-	union {
-		__kernel_rwf_t	rw_flags;
-		__u32		fsync_flags;
-		__u16		poll_events;	/* compatibility */
-		__u32		poll32_events;	/* word-reversed for BE */
-		__u32		sync_range_flags;
-		__u32		msg_flags;
-		__u32		timeout_flags;
-		__u32		accept_flags;
-		__u32		cancel_flags;
-		__u32		open_flags;
-		__u32		statx_flags;
-		__u32		fadvise_advice;
-		__u32		splice_flags;
-		__u32		rename_flags;
-		__u32		unlink_flags;
-		__u32		hardlink_flags;
-	};
-	__u64	user_data;	/* data to be passed back at completion time */
-	/* pack this to avoid bogus arm OABI complaints */
-	union {
-		/* index into fixed buffers, if used */
-		__u16	buf_index;
-		/* for grouped buffer selection */
-		__u16	buf_group;
-	} __attribute__((packed));
-	/* personality to use, if used */
-	__u16	personality;
-	union {
-		__s32	splice_fd_in;
-		__u32	file_index;
-	};
-	__u64	__pad2[2];
+	__io_uring_sqe;
+};
+
+/*
+ * SQE for SETUP_SQE128 - first 64 bytes are identical to a normal sqe,
+ * then 64 bytes are added for extra command payload data.
+ */
+struct io_uring_sqe128 {
+	__io_uring_sqe;
+	__u64			pdu[8];
 };
 
 enum {
@@ -70,6 +87,7 @@ enum {
 	IOSQE_IO_HARDLINK_BIT,
 	IOSQE_ASYNC_BIT,
 	IOSQE_BUFFER_SELECT_BIT,
+	IOSQE_CQE_SKIP_SUCCESS_BIT,
 };
 
 /*
@@ -87,6 +105,8 @@ enum {
 #define IOSQE_ASYNC		(1U << IOSQE_ASYNC_BIT)
 /* select buffer from sqe->buf_group */
 #define IOSQE_BUFFER_SELECT	(1U << IOSQE_BUFFER_SELECT_BIT)
+/* don't post CQE if request succeeded */
+#define IOSQE_CQE_SKIP_SUCCESS	(1U << IOSQE_CQE_SKIP_SUCCESS_BIT)
 
 /*
  * io_uring_setup() flags
@@ -98,6 +118,7 @@ enum {
 #define IORING_SETUP_CLAMP	(1U << 4)	/* clamp SQ/CQ ring sizes */
 #define IORING_SETUP_ATTACH_WQ	(1U << 5)	/* attach to existing wq */
 #define IORING_SETUP_R_DISABLED	(1U << 6)	/* start with ring disabled */
+#define IORING_SETUP_SQE128	(1U << 7)	/* SQEs are 128b */
 
 enum {
 	IORING_OP_NOP,
@@ -140,6 +161,8 @@ enum {
 	IORING_OP_MKDIRAT,
 	IORING_OP_SYMLINKAT,
 	IORING_OP_LINKAT,
+	IORING_OP_URING_CMD,
+	IORING_OP_URING_CMD_FIXED,
 
 	/* this goes last, obviously */
 	IORING_OP_LAST,
@@ -289,6 +312,7 @@ struct io_uring_params {
 #define IORING_FEAT_EXT_ARG		(1U << 8)
 #define IORING_FEAT_NATIVE_WORKERS	(1U << 9)
 #define IORING_FEAT_RSRC_TAGS		(1U << 10)
+#define IORING_FEAT_CQE_SKIP		(1U << 11)
 
 /*
  * io_uring_register(2) opcodes and arguments
