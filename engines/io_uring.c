@@ -324,6 +324,8 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		cmd->addr = (__u64)io_u->xfer_buf;
 		cmd->data_len = io_u->xfer_buflen;
 		cmd->nsid = f->nsid;
+		if (o->hipri)
+			cmd->flags = 1;
 		if (io_u->ddir == DDIR_READ)
 			cmd->opcode = 2;
 		if (io_u->ddir == DDIR_WRITE)
