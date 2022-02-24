@@ -289,6 +289,43 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 	struct fio_file *f = io_u->file;
 	struct io_uring_sqe *sqe;
 
+	/* nvme_passthru_cmd64 case */
+	if (td->o.uring_cmd == 1) {
+		struct io_uring_sqe128 *sqe128;
+		struct nvme_passthru_cmd64 *cmd;
+		unsigned long long slba;
+		unsigned long long nlb;
+
+		sqe128 = (struct io_uring_sqe128 *)&ld->sqes[(io_u->index)<<1];
+		if (o->registerfiles) {
+			sqe128->fd = f->engine_pos;
+			sqe128->flags = IOSQE_FIXED_FILE;
+		} else {
+			sqe128->fd = f->fd;
+		}
+		sqe128->opcode = IORING_OP_URING_CMD;
+		sqe128->user_data = (unsigned long) io_u;
+		sqe128->cmd_op = NVME_IOCTL_IO64_CMD;
+		sqe128->cmd_len = sizeof(struct nvme_passthru_cmd64);
+		slba = io_u->offset/f->logical_block_size;
+		nlb = io_u->xfer_buflen/f->logical_block_size - 1;
+		cmd = (struct nvme_passthru_cmd64 *)&sqe128->cmd;
+		memset(cmd, 0, sizeof(struct nvme_passthru_cmd64));
+		/* cdw10 and cdw11 represent starting slba*/
+		cmd->cdw10 = slba & 0xffffffff;
+		cmd->cdw11 = slba >> 32;
+		/* cdw12 represent number of lba to be read*/
+		cmd->cdw12 = nlb;
+		cmd->addr = (__u64)io_u->xfer_buf;
+		cmd->data_len = io_u->xfer_buflen;
+		cmd->nsid = f->nsid;
+		if (io_u->ddir == DDIR_READ)
+			cmd->opcode = 2;
+		if (io_u->ddir == DDIR_WRITE)
+			cmd->opcode = 1;
+		return 0;
+	}
+
 	sqe = &ld->sqes[io_u->index];
 
 	if (o->registerfiles) {
@@ -379,6 +416,13 @@ static struct io_u *fio_ioring_event(struct thread_data *td, int event)
 
 	cqe = &ld->cq_ring.cqes[index];
 	io_u = (struct io_u *) (uintptr_t) cqe->user_data;
+
+	if (td->o.uring_cmd) {
+		if (cqe->res == 0) {
+			io_u->error = 0;
+			return io_u;
+		}
+	}
 
 	if (cqe->res != io_u->xfer_buflen) {
 		if (cqe->res > io_u->xfer_buflen)
@@ -617,7 +661,10 @@ static int fio_ioring_mmap(struct ioring_data *ld, struct io_uring_params *p)
 	sring->array = ptr + p->sq_off.array;
 	ld->sq_ring_mask = *sring->ring_mask;
 
-	ld->mmap[1].len = p->sq_entries * sizeof(struct io_uring_sqe);
+	if (p->flags & IORING_SETUP_SQE128)
+		ld->mmap[1].len = p->sq_entries * sizeof(struct io_uring_sqe128);
+	else
+		ld->mmap[1].len = p->sq_entries * sizeof(struct io_uring_sqe);
 	ld->sqes = mmap(0, ld->mmap[1].len, PROT_READ | PROT_WRITE,
 				MAP_SHARED | MAP_POPULATE, ld->ring_fd,
 				IORING_OFF_SQES);
@@ -691,6 +738,8 @@ static int fio_ioring_queue_init(struct thread_data *td)
 			p.sq_thread_cpu = o->sqpoll_cpu;
 		}
 	}
+	if (td->o.uring_cmd)
+		p.flags |= IORING_SETUP_SQE128;
 
 	/*
 	 * Clamp CQ ring size at our SQ ring size, we don't need more entries
@@ -785,8 +834,13 @@ static int fio_ioring_post_init(struct thread_data *td)
 	for (i = 0; i < td->o.iodepth; i++) {
 		struct io_uring_sqe *sqe;
 
-		sqe = &ld->sqes[i];
-		memset(sqe, 0, sizeof(*sqe));
+		if (td->o.uring_cmd) {
+			sqe = &ld->sqes[i<<1];
+			memset(sqe, 0, 2 * sizeof(*sqe));
+		} else {
+			sqe = &ld->sqes[i];
+			memset(sqe, 0, sizeof(*sqe));
+		}
 	}
 
 	if (o->registerfiles) {
