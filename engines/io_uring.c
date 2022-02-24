@@ -303,7 +303,12 @@ static int fio_ioring_prep(struct thread_data *td, struct io_u *io_u)
 		} else {
 			sqe128->fd = f->fd;
 		}
-		sqe128->opcode = IORING_OP_URING_CMD;
+		if (o->fixedbufs) {
+			sqe128->opcode = IORING_OP_URING_CMD_FIXED;
+			sqe128->buf_index = io_u->index;
+		} else {
+			sqe128->opcode = IORING_OP_URING_CMD;
+		}
 		sqe128->user_data = (unsigned long) io_u;
 		sqe128->cmd_op = NVME_IOCTL_IO64_CMD;
 		sqe128->cmd_len = sizeof(struct nvme_passthru_cmd64);
