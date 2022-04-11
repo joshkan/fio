@@ -417,15 +417,20 @@ static struct io_u *fio_ioring_event(struct thread_data *td, int event)
 	unsigned index;
 
 	index = (event + ld->cq_ring_off) & ld->cq_ring_mask;
+	if (td->o.uring_cmd)
+		index <<= 1;
 
 	cqe = &ld->cq_ring.cqes[index];
 	io_u = (struct io_u *) (uintptr_t) cqe->user_data;
 
 	if (td->o.uring_cmd) {
-		if (cqe->res != 0)
+		if (cqe->big_cqe[0] != 0) {
+			io_u->error = -cqe->big_cqe[0];
+		} else if (cqe->res != 0) {
 			io_u->error = -cqe->res;
-		else
+		} else {
 			io_u->error = 0;
+		}
 		return io_u;
 	}
 
@@ -675,8 +680,13 @@ static int fio_ioring_mmap(struct ioring_data *ld, struct io_uring_params *p)
 				IORING_OFF_SQES);
 	ld->mmap[1].ptr = ld->sqes;
 
-	ld->mmap[2].len = p->cq_off.cqes +
-				p->cq_entries * sizeof(struct io_uring_cqe);
+	if (p->flags & IORING_SETUP_CQE32) {
+		ld->mmap[2].len = p->cq_off.cqes +
+					2 * p->cq_entries * sizeof(struct io_uring_cqe);
+	} else {
+		ld->mmap[2].len = p->cq_off.cqes +
+					p->cq_entries * sizeof(struct io_uring_cqe);
+	}
 	ptr = mmap(0, ld->mmap[2].len, PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_POPULATE, ld->ring_fd,
 			IORING_OFF_CQ_RING);
@@ -743,8 +753,10 @@ static int fio_ioring_queue_init(struct thread_data *td)
 			p.sq_thread_cpu = o->sqpoll_cpu;
 		}
 	}
-	if (td->o.uring_cmd)
+	if (td->o.uring_cmd) {
 		p.flags |= IORING_SETUP_SQE128;
+		p.flags |= IORING_SETUP_CQE32;
+	}
 
 	/*
 	 * Clamp CQ ring size at our SQ ring size, we don't need more entries
