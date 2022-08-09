@@ -423,7 +423,12 @@ static int fio_ioring_cmd_prep(struct thread_data *td, struct io_u *io_u)
 	if (o->nowait)
 		sqe->rw_flags |= RWF_NOWAIT;
 
-	sqe->opcode = IORING_OP_URING_CMD;
+	if (o->fixedbufs) {
+		sqe->opcode = IORING_OP_URING_CMD_FIXED;
+		sqe->buf_index = io_u->index;
+	} else {
+		sqe->opcode = IORING_OP_URING_CMD;
+	}
 	sqe->user_data = (unsigned long) io_u;
 	if (o->nonvectored)
 		sqe->cmd_op = NVME_URING_CMD_IO;
