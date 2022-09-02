@@ -635,7 +635,12 @@ static void init_io_pt(struct submitter *s, unsigned index)
 		sqe->fd = f->real_fd;
 		sqe->flags = 0;
 	}
-	sqe->opcode = IORING_OP_URING_CMD;
+	if (fixedbufs) {
+		sqe->opcode = IORING_OP_URING_CMD_FIXED;
+		sqe->buf_index = index;
+	} else {
+		sqe->opcode = IORING_OP_URING_CMD;
+	}
 	sqe->user_data = (unsigned long) f->fileno;
 	if (stats)
 		sqe->user_data |= ((__u64) s->clock_index << 32ULL);
